@@ -1,2 +1,5 @@
 # GLID-image-segmentation
 Glacial retreat is increasing glacial lakes, especially in the Himalayas, creating environmental and hazard concerns. Deep learning-based semantic segmentation enables faster, accurate, and scalable mapping of these lakes from satellite imagery.
+
+## Dataset
+The GLID dataset is a glacial lake mapping dataset containing 18,367 image-label pairs of 512x512 pixel samples. It includes four glacial lake types: supraglacial, proglacial, ice-marginal, and unconnected glacial lakes. The annotation maps use 255 for lake pixels and 0 for background. The dataset is divided into 16,000 training samples and 2,367 validation samples, with additional annotated shapefiles and source optical image metadata provided for reference. [Link to dataset](https://zenodo.org/records/14838695)
