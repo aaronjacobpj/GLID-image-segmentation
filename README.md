@@ -66,6 +66,7 @@ Dataset (GLID) DOI / Zenodo: https://zenodo.org/records/14838695
 Include formal citation and dataset license text when redistributing or publishing. Add a LICENSE file to this repository to clarify reuse terms.
 
 ## Contact
-
-Owner: @aaronjacobpj — https://github.com/aaronjacobpj \
-## Colaborators: 
+Colaborators: 
+- [aaronjacobpj](https://github.com/aaronjacobpj)
+- [Aditi Gulati]()
+- [Rudra Pratap Masram](https://github.com/RudraMasram07)
