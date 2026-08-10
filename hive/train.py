@@ -66,7 +66,7 @@ class Trainer:
         
         # Best checkpoint
         self.best_val_iou = -float("inf")
-        self.checkpoint_dir = config.checkpoint_dir
+        self.checkpoint_dir = self.config.checkpoint_dir
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
     
     def train_epoch(self) -> Tuple[float, float]:
@@ -238,29 +238,30 @@ def create_scheduler(optimizer: torch.optim.Optimizer, config: Config) -> Option
 
 def main(argv: Optional[List[str]] = None) -> None:
     """Main training pipeline."""
+    config = Config()
     parser = argparse.ArgumentParser(description="Train GLID segmentation model")
     parser.add_argument(
         "--data-dir",
         type=str,
-        default="project/data",
+        default=str(config.data.data_dir),
         help="Path to data directory",
     )
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=16,
+        default=config.data.batch_size,
         help="Batch size",
     )
     parser.add_argument(
         "--epochs",
         type=int,
-        default=50,
+        default=config.training.epochs,
         help="Number of epochs",
     )
     parser.add_argument(
         "--lr",
         type=float,
-        default=1e-3,
+        default=config.training.learning_rate,
         help="Learning rate",
     )
     parser.add_argument(

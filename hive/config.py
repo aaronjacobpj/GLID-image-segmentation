@@ -62,8 +62,24 @@ class Config:
 
     # Paths
     output_dir: Path = Path(environ.get("OUTPUT_DIR") or "outputs")
-    checkpoint_dir: Path = Path(environ.get("CHECKPOINT_DIR") or "checkpoints")
-    logs_dir: Path = Path(environ.get("LOGS_DIR") or "logs")
+    checkpoint_dir: Optional[Path] = None
+    logs_dir: Optional[Path] = None
+
+    def __post_init__(self) -> None:
+        if self.checkpoint_dir is None:
+            checkpoint_dir_env = environ.get("CHECKPOINT_DIR")
+            self.checkpoint_dir = (
+                Path(checkpoint_dir_env)
+                if checkpoint_dir_env is not None
+                else self.output_dir / "checkpoints"
+            )
+        if self.logs_dir is None:
+            logs_dir_env = environ.get("LOGS_DIR")
+            self.logs_dir = (
+                Path(logs_dir_env)
+                if logs_dir_env is not None
+                else self.output_dir / "logs"
+            )
 
     def setup_directories(self) -> None:
         """Create necessary directories."""
