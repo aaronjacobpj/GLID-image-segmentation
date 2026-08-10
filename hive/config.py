@@ -3,9 +3,9 @@ Configuration settings for model training.
 KISS principle: Keep It Simple, Structured.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 
 @dataclass
@@ -25,11 +25,7 @@ class ModelConfig:
     """Model architecture configuration."""
     input_channels: int = 3
     output_channels: int = 1
-    encoder_channels: list = None
-    
-    def __post_init__(self):
-        if self.encoder_channels is None:
-            self.encoder_channels = [64, 128, 256, 512]
+    encoder_channels: List[int] = field(default_factory=lambda: [64, 128, 256, 512])
 
 
 @dataclass
@@ -58,27 +54,17 @@ class LossConfig:
 @dataclass
 class Config:
     """Complete configuration object."""
-    data: DataConfig = None
-    model: ModelConfig = None
-    training: TrainingConfig = None
-    loss: LossConfig = None
-    
+    data: DataConfig = field(default_factory=DataConfig)
+    model: ModelConfig = field(default_factory=ModelConfig)
+    training: TrainingConfig = field(default_factory=TrainingConfig)
+    loss: LossConfig = field(default_factory=LossConfig)
+
     # Paths
-    output_dir: Path = Path("hive/outputs")
-    checkpoint_dir: Path = Path("hive/checkpoints")
-    logs_dir: Path = Path("hive/logs")
-    
-    def __post_init__(self):
-        if self.data is None:
-            self.data = DataConfig()
-        if self.model is None:
-            self.model = ModelConfig()
-        if self.training is None:
-            self.training = TrainingConfig()
-        if self.loss is None:
-            self.loss = LossConfig()
-    
-    def setup_directories(self):
+    output_dir: Path = Path("outputs")
+    checkpoint_dir: Path = Path("checkpoints")
+    logs_dir: Path = Path("logs")
+
+    def setup_directories(self) -> None:
         """Create necessary directories."""
         for path in [self.output_dir, self.checkpoint_dir, self.logs_dir]:
             path.mkdir(parents=True, exist_ok=True)

@@ -1,15 +1,14 @@
 """
 Data loading utilities for GLID dataset.
-KISS principle: Keep it simple and focused.
 """
 
 import os
 from pathlib import Path
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 import torch
 import numpy as np
 from PIL import Image
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, Subset
 from torchvision import transforms
 import torchvision.transforms.functional as TF
 
@@ -27,7 +26,7 @@ class GLIDDataset(Dataset):
         normalize_std: float = 0.5,
         augment: bool = False,
         augment_prob: float = 0.5,
-    ):
+    ) -> None:
         """
         Initialize dataset.
         
@@ -113,51 +112,124 @@ class GLIDDataset(Dataset):
         return transform(label)
 
 
+def _limit_dataset(dataset: Dataset, subset_size: Optional[int]) -> Dataset:
+    if subset_size is None:
+        return dataset
+    if subset_size <= 0:
+        raise ValueError("subset_size must be greater than 0")
+    if subset_size > len(dataset):
+        raise ValueError(
+            f"subset_size ({subset_size}) cannot be larger than dataset size ({len(dataset)})"
+        )
+    return Subset(dataset, list(range(subset_size)))
+
+
 def create_dataloaders(
-    data_dir: str,
+    data_dir: Optional[str] = None,
+    train_dir: Optional[str] = None,
+    val_dir: Optional[str] = None,
+    test_dir: Optional[str] = None,
     batch_size: int = 16,
     image_size: int = 224,
     train_split: float = 0.8,
     num_workers: int = 4,
     random_seed: int = 42,
+    subset_size: Optional[int] = None,
 ) -> Tuple[DataLoader, DataLoader, DataLoader]:
     """
     Create train, validation, and test dataloaders.
-    
+
+    Supports two modes:
+    1. Single data folder with `images/` and `labels/`, which is split automatically.
+    2. Separate `train_dir` and `val_dir` folders, each with `images/` and `labels/`.
+
     Args:
-        data_dir: Path to data directory
-        batch_size: Batch size
-        image_size: Image size
-        train_split: Fraction for training
-        num_workers: Number of data loading workers
-        random_seed: Random seed for reproducibility
-    
+        data_dir: Optional path to a single dataset folder containing images/ and labels/.
+        train_dir: Optional path to training dataset folder.
+        val_dir: Optional path to validation dataset folder.
+        test_dir: Optional path to test dataset folder.
+        batch_size: Batch size.
+        image_size: Image size.
+        train_split: Fraction of the combined dataset used for training when using a single root folder.
+        num_workers: Number of data loading workers.
+        random_seed: Random seed for reproducibility.
+        subset_size: Optional maximum number of samples to use from each dataset.
+
     Returns:
-        Tuple of (train_loader, val_loader, test_loader)
+        Tuple of (train_loader, val_loader, test_loader).
     """
     torch.manual_seed(random_seed)
     np.random.seed(random_seed)
-    
-    # Create dataset
+
+    if train_dir is not None and val_dir is not None:
+        train_dataset = GLIDDataset(
+            folder=train_dir,
+            image_size=image_size,
+            augment=True,
+            augment_prob=0.5,
+        )
+        val_dataset = GLIDDataset(
+            folder=val_dir, image_size=image_size, augment=False)
+        test_dataset = None
+        if test_dir is not None:
+            test_dataset = GLIDDataset(
+                folder=test_dir, image_size=image_size, augment=False
+            )
+        else:
+            test_dataset = val_dataset
+
+        train_dataset = _limit_dataset(train_dataset, subset_size)
+        val_dataset = _limit_dataset(val_dataset, subset_size)
+        test_dataset = _limit_dataset(test_dataset, subset_size) if test_dir is not None else test_dataset
+
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=num_workers,
+            pin_memory=True,
+        )
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+            pin_memory=True,
+        )
+        test_loader = DataLoader(
+            test_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+            pin_memory=True,
+        )
+
+        return train_loader, val_loader, test_loader
+
+    if data_dir is None:
+        raise ValueError(
+            "Either data_dir or both train_dir and val_dir must be provided."
+        )
+
+    # Legacy single-folder behavior using a train/val/test split.
     dataset = GLIDDataset(
         folder=data_dir,
         image_size=image_size,
         augment=True,
         augment_prob=0.5,
     )
-    
-    # Split data
+    dataset = _limit_dataset(dataset, subset_size)
+
     train_size = int(len(dataset) * train_split)
     val_size = int(len(dataset) * (1 - train_split) / 2)
     test_size = len(dataset) - train_size - val_size
-    
+
     train_set, val_set, test_set = torch.utils.data.random_split(
         dataset,
         [train_size, val_size, test_size],
-        generator=torch.Generator().manual_seed(random_seed)
+        generator=torch.Generator().manual_seed(random_seed),
     )
-    
-    # Create loaders
+
     train_loader = DataLoader(
         train_set,
         batch_size=batch_size,
@@ -165,7 +237,6 @@ def create_dataloaders(
         num_workers=num_workers,
         pin_memory=True,
     )
-    
     val_loader = DataLoader(
         val_set,
         batch_size=batch_size,
@@ -173,7 +244,6 @@ def create_dataloaders(
         num_workers=num_workers,
         pin_memory=True,
     )
-    
     test_loader = DataLoader(
         test_set,
         batch_size=batch_size,
@@ -181,5 +251,5 @@ def create_dataloaders(
         num_workers=num_workers,
         pin_memory=True,
     )
-    
+
     return train_loader, val_loader, test_loader

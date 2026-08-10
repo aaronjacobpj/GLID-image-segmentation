@@ -3,20 +3,23 @@ Main training pipeline for GLID glacial lake segmentation.
 KISS principle: Simple, clean, and focused.
 """
 
+import logging
 import torch
 import torch.nn as nn
 from torch.optim import Adam, SGD
-from torch.optim.lr_scheduler import CosineAnnealingLR, PolynomialLR
+from torch.optim.lr_scheduler import CosineAnnealingLR, PolynomialLR, _LRScheduler
 from torch.utils.data import DataLoader
 import pandas as pd
 from pathlib import Path
 from tqdm import tqdm
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 import argparse
 
 from .config import Config
 from .data import create_dataloaders
-from .models import UNet, SimpleCNN
+from .deeplab import DeepLabV3Plus
+from .transformer import SwinModel
+from .unet import UNet
 from .utils import (
     setup_device,
     setup_logger,
@@ -40,8 +43,8 @@ class Trainer:
         optimizer: torch.optim.Optimizer,
         device: str,
         config: Config,
-        logger,
-    ):
+        logger: logging.Logger,
+    ) -> None:
         """Initialize trainer."""
         self.model = model.to(device)
         self.train_loader = train_loader
@@ -95,7 +98,7 @@ class Trainer:
             total_iou += iou
             num_batches += 1
             
-            pbar.set_postfix({"loss": loss.item():.4f}, refresh=False)
+            pbar.set_postfix({"loss": f"{loss.item():.4f}"}, refresh=False)
         
         avg_loss = total_loss / num_batches
         avg_iou = total_iou / num_batches
@@ -131,7 +134,7 @@ class Trainer:
         
         return avg_loss, avg_iou
     
-    def train(self, epochs: int, scheduler=None, patience: Optional[int] = None):
+    def train(self, epochs: int, scheduler: Optional[_LRScheduler] = None, patience: Optional[int] = None) -> None:
         """
         Train model.
         
@@ -214,7 +217,7 @@ def create_optimizer(model: nn.Module, config: Config) -> torch.optim.Optimizer:
         raise ValueError(f"Unknown optimizer: {config.training.optimizer}")
 
 
-def create_scheduler(optimizer: torch.optim.Optimizer, config: Config):
+def create_scheduler(optimizer: torch.optim.Optimizer, config: Config) -> Optional[_LRScheduler]:
     """Create learning rate scheduler."""
     if config.training.scheduler is None:
         return None
@@ -233,7 +236,7 @@ def create_scheduler(optimizer: torch.optim.Optimizer, config: Config):
         return None
 
 
-def main():
+def main(argv: Optional[List[str]] = None) -> None:
     """Main training pipeline."""
     parser = argparse.ArgumentParser(description="Train GLID segmentation model")
     parser.add_argument(
@@ -264,10 +267,34 @@ def main():
         "--model",
         type=str,
         default="unet",
-        choices=["unet", "simplecnn"],
+        choices=["unet", "deeplab", "swin"],
         help="Model architecture",
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--train-dir",
+        type=str,
+        default=None,
+        help="Path to training data folder containing images/ and labels/",
+    )
+    parser.add_argument(
+        "--val-dir",
+        type=str,
+        default=None,
+        help="Path to validation data folder containing images/ and labels/",
+    )
+    parser.add_argument(
+        "--test-dir",
+        type=str,
+        default=None,
+        help="Path to test data folder containing images/ and labels/",
+    )
+    parser.add_argument(
+        "--subset-size",
+        type=int,
+        default=None,
+        help="Use only the first N samples from each dataset",
+    )
+    args = parser.parse_args(argv)
     
     # Setup
     set_seed(42)
@@ -289,10 +316,14 @@ def main():
     # Data
     logger.info(f"Loading data from {config.data.data_dir}")
     train_loader, val_loader, test_loader = create_dataloaders(
-        data_dir=str(config.data.data_dir),
+        data_dir=str(config.data.data_dir) if args.train_dir is None else None,
+        train_dir=args.train_dir,
+        val_dir=args.val_dir,
+        test_dir=args.test_dir,
         batch_size=config.data.batch_size,
         image_size=config.data.image_size,
         num_workers=config.data.num_workers,
+        subset_size=args.subset_size,
     )
     logger.info(
         f"Data: train={len(train_loader.dataset)}, "
@@ -301,17 +332,24 @@ def main():
     )
     
     # Model
-    if args.model.lower() == "unet":
+    model_name = args.model.lower()
+    if model_name == "unet":
         model = UNet(
             in_channels=config.model.input_channels,
             out_channels=config.model.output_channels,
             encoder_channels=config.model.encoder_channels,
         )
-    else:
-        model = SimpleCNN(
-            in_channels=config.model.input_channels,
-            out_channels=config.model.output_channels,
+    elif model_name == "deeplab":
+        model = DeepLabV3Plus(num_classes=config.model.output_channels)
+    elif model_name == "swin":
+        model = SwinModel(
+            channels=256,
+            out_size=config.data.image_size,
+            classes=config.model.output_channels,
+            pretrained=False,
         )
+    else:
+        raise ValueError(f"Unknown model architecture: {args.model}")
     logger.info(f"Model: {args.model}")
     
     # Loss, optimizer, scheduler

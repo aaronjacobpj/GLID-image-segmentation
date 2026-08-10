@@ -8,9 +8,11 @@ import numpy as np
 from pathlib import Path
 from PIL import Image
 import argparse
-from typing import Tuple
+from typing import Tuple, Optional, List
 
-from .models import UNet, SimpleCNN
+from .deeplab import DeepLabV3Plus
+from .transformer import SwinModel
+from .unet import UNet
 from .utils import setup_device
 
 
@@ -23,7 +25,7 @@ class Inference:
         model_type: str = "unet",
         device: str = "auto",
         image_size: int = 224,
-    ):
+    ) -> None:
         """
         Initialize inference.
         
@@ -35,12 +37,18 @@ class Inference:
         """
         self.device = setup_device(device)
         self.image_size = image_size
+        self.model: torch.nn.Module
         
         # Load model
-        if model_type.lower() == "unet":
+        model_type = model_type.lower()
+        if model_type == "unet":
             self.model = UNet()
+        elif model_type == "deeplab":
+            self.model = DeepLabV3Plus(num_classes=1)
+        elif model_type == "swin":
+            self.model = SwinModel(classes=1, out_size=self.image_size, pretrained=False)
         else:
-            self.model = SimpleCNN()
+            raise ValueError(f"Unsupported model type: {model_type}")
         
         checkpoint = torch.load(model_path, map_location=self.device)
         self.model.load_state_dict(checkpoint)
@@ -81,14 +89,20 @@ class Inference:
         return probs.squeeze().cpu(), binary_mask.squeeze().cpu()
 
 
-def main():
+def main(argv: Optional[List[str]] = None) -> None:
     parser = argparse.ArgumentParser(description="Run inference on images")
     parser.add_argument("--model", type=str, required=True, help="Path to model checkpoint")
     parser.add_argument("--image", type=str, required=True, help="Path to input image")
     parser.add_argument("--output", type=str, default="prediction.png", help="Output path")
     parser.add_argument("--threshold", type=float, default=0.5, help="Confidence threshold")
-    parser.add_argument("--model-type", type=str, default="unet", help="Model type")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--model-type",
+        type=str,
+        default="unet",
+        choices=["unet", "deeplab", "swin"],
+        help="Model type",
+    )
+    args = parser.parse_args(argv)
     
     # Inference
     inference = Inference(args.model, args.model_type)

@@ -185,7 +185,7 @@ def get_pred_mask(logits: torch.Tensor, threshold: float = 0.5) -> torch.Tensor:
     return (torch.sigmoid(logits) > threshold).float()
 
 
-def set_seed(seed: int = 42):
+def set_seed(seed: int = 42) -> None:
     """Set random seeds for reproducibility."""
     import random
     import numpy as np

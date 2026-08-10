@@ -7,7 +7,9 @@ KISS principle: Keep It Simple, Structured.
 
 from .config import Config, DataConfig, ModelConfig, TrainingConfig, LossConfig
 from .data import GLIDDataset, create_dataloaders
-from .models import UNet, SimpleCNN, DoubleConv
+from .deeplab import DeepLabV3Plus
+from .transformer import SwinModel
+from .unet import UNet, DoubleConv
 from .utils import (
     setup_device,
     setup_logger,
@@ -32,8 +34,9 @@ __all__ = [
     "GLIDDataset",
     "create_dataloaders",
     "UNet",
-    "SimpleCNN",
     "DoubleConv",
+    "DeepLabV3Plus",
+    "SwinModel",
     "setup_device",
     "setup_logger",
     "DiceBCELoss",

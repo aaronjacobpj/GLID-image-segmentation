@@ -1,6 +1,5 @@
 """
 Model architectures for semantic segmentation.
-KISS principle: Clean, simple implementations.
 """
 
 import torch
@@ -37,7 +36,7 @@ class UNet(nn.Module):
         in_channels: int = 3,
         out_channels: int = 1,
         encoder_channels: List[int] = None,
-    ):
+    ) -> None:
         """
         Initialize U-Net.
         
@@ -109,33 +108,3 @@ class UNet(nn.Module):
         out = self.final(up3)
         return out
 
-
-class SimpleCNN(nn.Module):
-    """Lightweight CNN baseline for segmentation."""
-    
-    def __init__(self, in_channels: int = 3, out_channels: int = 1):
-        super().__init__()
-        
-        self.encoder = nn.Sequential(
-            nn.Conv2d(in_channels, 32, 3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(2),
-            nn.Conv2d(32, 64, 3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(2),
-            nn.Conv2d(64, 128, 3, padding=1),
-            nn.ReLU(inplace=True),
-        )
-        
-        self.decoder = nn.Sequential(
-            nn.ConvTranspose2d(128, 64, 4, stride=2, padding=1),
-            nn.ReLU(inplace=True),
-            nn.ConvTranspose2d(64, 32, 4, stride=2, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(32, out_channels, 1),
-        )
-    
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.encoder(x)
-        x = self.decoder(x)
-        return x
