@@ -6,12 +6,13 @@ KISS principle: Keep It Simple, Structured.
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
+from os import environ
 
 
 @dataclass
 class DataConfig:
     """Data loading and preprocessing configuration."""
-    data_dir: Path = Path("project/data")
+    data_dir: Path = Path(environ.get("DATA_DIR") or "data")
     image_size: int = 224
     batch_size: int = 16
     num_workers: int = 4
@@ -60,9 +61,9 @@ class Config:
     loss: LossConfig = field(default_factory=LossConfig)
 
     # Paths
-    output_dir: Path = Path("outputs")
-    checkpoint_dir: Path = Path("checkpoints")
-    logs_dir: Path = Path("logs")
+    output_dir: Path = Path(environ.get("OUTPUT_DIR") or "outputs")
+    checkpoint_dir: Path = Path(environ.get("CHECKPOINT_DIR") or "checkpoints")
+    logs_dir: Path = Path(environ.get("LOGS_DIR") or "logs")
 
     def setup_directories(self) -> None:
         """Create necessary directories."""
