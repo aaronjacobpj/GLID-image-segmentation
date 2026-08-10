@@ -4,6 +4,7 @@ KISS principle: Simple, clean, and focused.
 """
 
 import logging
+import csv
 import torch
 import torch.nn as nn
 from torch.optim import Adam, SGD
@@ -12,7 +13,7 @@ from torch.utils.data import DataLoader
 import pandas as pd
 from pathlib import Path
 from tqdm import tqdm
-from typing import Tuple, Optional, List
+from typing import Tuple, Optional, List, Dict
 import argparse
 
 from .config import Config
@@ -44,6 +45,7 @@ class Trainer:
         device: str,
         config: Config,
         logger: logging.Logger,
+        run_name: str = "training",
     ) -> None:
         """Initialize trainer."""
         self.model = model.to(device)
@@ -54,27 +56,57 @@ class Trainer:
         self.device = device
         self.config = config
         self.logger = logger
+        self.run_name = run_name
         
         # Metrics
         self.iou_metric = IoUMetric()
         self.accuracy_metric = PixelAccuracy()
         
-        # History
+        # History (include accuracy)
         self.history = pd.DataFrame(
-            columns=["epoch", "train_loss", "val_loss", "train_iou", "val_iou"]
+            columns=[
+                "epoch",
+                "train_loss",
+                "val_loss",
+                "train_iou",
+                "val_iou",
+                "train_accuracy",
+                "val_accuracy",
+            ]
         )
         
         # Best checkpoint
         self.best_val_iou = -float("inf")
         self.checkpoint_dir = self.config.checkpoint_dir
+        assert self.checkpoint_dir is not None, "Checkpoint directory is None"
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        # Prepare metrics CSV for live logging (include run_name)
+        assert self.config.logs_dir is not None, "Logs directory is None"
+        self.config.logs_dir.mkdir(parents=True, exist_ok=True)
+        self.metrics_path = self.config.logs_dir / f"{self.run_name}_metrics.csv"
+        if not self.metrics_path.exists():
+            with open(self.metrics_path, "w", encoding="utf-8", newline="") as f:
+                writer = csv.DictWriter(
+                    f,
+                    fieldnames=[
+                        "epoch",
+                        "train_loss",
+                        "val_loss",
+                        "train_iou",
+                        "val_iou",
+                        "train_accuracy",
+                        "val_accuracy",
+                    ],
+                )
+                writer.writeheader()
     
-    def train_epoch(self) -> Tuple[float, float]:
+    def train_epoch(self) -> Tuple[float, float, float]:
         """Train one epoch."""
         self.model.train()
         
         total_loss = 0.0
         total_iou = 0.0
+        total_acc = 0.0
         num_batches = 0
         
         pbar = tqdm(self.train_loader, desc="Training")
@@ -95,22 +127,26 @@ class Trainer:
             # Metrics
             total_loss += loss.item()
             iou = self.iou_metric(logits.detach(), labels.detach())
+            acc = self.accuracy_metric(logits.detach(), labels.detach())
             total_iou += iou
+            total_acc += acc
             num_batches += 1
             
             pbar.set_postfix({"loss": f"{loss.item():.4f}"}, refresh=False)
         
         avg_loss = total_loss / num_batches
         avg_iou = total_iou / num_batches
-        
-        return avg_loss, avg_iou
+        avg_acc = total_acc / num_batches
+
+        return avg_loss, avg_iou, avg_acc
     
-    def validate(self) -> Tuple[float, float]:
+    def validate(self) -> Tuple[float, float, float]:
         """Validate on validation set."""
         self.model.eval()
         
         total_loss = 0.0
         total_iou = 0.0
+        total_acc = 0.0
         num_batches = 0
         
         with torch.no_grad():
@@ -126,13 +162,16 @@ class Trainer:
                 # Metrics
                 total_loss += loss.item()
                 iou = self.iou_metric(logits, labels)
+                acc = self.accuracy_metric(logits, labels)
                 total_iou += iou
+                total_acc += acc
                 num_batches += 1
         
-        avg_loss = total_loss / num_batches
-        avg_iou = total_iou / num_batches
-        
-        return avg_loss, avg_iou
+            avg_loss = total_loss / num_batches
+            avg_iou = total_iou / num_batches
+            avg_acc = total_acc / num_batches
+
+            return avg_loss, avg_iou, avg_acc
     
     def train(self, epochs: int, scheduler: Optional[_LRScheduler] = None, patience: Optional[int] = None) -> None:
         """
@@ -147,8 +186,8 @@ class Trainer:
         patience_counter = 0
         
         for epoch in range(epochs):
-            train_loss, train_iou = self.train_epoch()
-            val_loss, val_iou = self.validate()
+            train_loss, train_iou, train_acc = self.train_epoch()
+            val_loss, val_iou, val_acc = self.validate()
             
             # Learning rate scheduler
             if scheduler is not None:
@@ -161,8 +200,28 @@ class Trainer:
                 "val_loss": val_loss,
                 "train_iou": train_iou,
                 "val_iou": val_iou,
+                "train_accuracy": train_acc,
+                "val_accuracy": val_acc,
             }
             self.history = pd.concat([self.history, pd.DataFrame([row])], ignore_index=True)
+            # Append metrics to live CSV
+            try:
+                with open(self.metrics_path, "a", encoding="utf-8", newline="") as f:
+                    writer = csv.DictWriter(
+                        f,
+                        fieldnames=[
+                            "epoch",
+                            "train_loss",
+                            "val_loss",
+                            "train_iou",
+                            "val_iou",
+                            "train_accuracy",
+                            "val_accuracy",
+                        ],
+                    )
+                    writer.writerow(row)
+            except Exception as e:
+                self.logger.warning(f"Failed to write metrics CSV row: {e}")
             
             # Save best checkpoint
             if val_iou > self.best_val_iou:
@@ -185,15 +244,20 @@ class Trainer:
             if patience is not None and patience_counter >= patience:
                 self.logger.info(f"Early stopping at epoch {epoch+1}")
                 break
-        
-        # Save history
-        history_path = self.config.logs_dir / "training_history.csv"
+
+        assert self.config.logs_dir is not None, "Logs directory is None"
+
+        # Save history (include run_name)
+        history_path = self.config.logs_dir / f"{self.run_name}_training_history.csv"
         self.history.to_csv(history_path, index=False)
         self.logger.info(f"Training complete. History saved to {history_path}")
     
     def _save_checkpoint(self, epoch: int):
         """Save model checkpoint."""
-        checkpoint_path = self.checkpoint_dir / f"best_model_epoch{epoch+1}.pth"
+
+        assert self.config.checkpoint_dir is not None, "Checkpoint directory is None"
+
+        checkpoint_path = self.config.checkpoint_dir / f"{self.run_name}_best_model_epoch{epoch+1}.pth"
         torch.save(self.model.state_dict(), checkpoint_path)
         self.logger.info(f"Saved checkpoint: {checkpoint_path}")
 
@@ -306,8 +370,12 @@ def main(argv: Optional[List[str]] = None) -> None:
     config.training.learning_rate = args.lr
     config.setup_directories()
     
-    # Logger
-    logger = setup_logger(config.logs_dir)
+    # Construct run name (model + learning rate) and Logger
+    model_name = args.model.lower()
+    lr_str = f"{config.training.learning_rate:.0e}"
+    run_name = f"{model_name}_lr{lr_str}"
+    assert config.logs_dir is not None, "Logs directory is None"
+    logger = setup_logger(config.logs_dir, name=run_name)
     logger.info(f"Config: {config}")
     
     # Device
@@ -333,7 +401,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     )
     
     # Model
-    model_name = args.model.lower()
+    # model_name already defined above
     if model_name == "unet":
         model = UNet(
             in_channels=config.model.input_channels,
@@ -374,6 +442,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         device=device,
         config=config,
         logger=logger,
+        run_name=run_name,
     )
     
     # Train

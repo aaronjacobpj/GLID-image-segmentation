@@ -2,11 +2,44 @@
 Training utilities: metrics, losses, device setup, logging.
 """
 
+import csv
 import torch
 import torch.nn as nn
 import logging
 from pathlib import Path
 from typing import Tuple
+
+
+class CSVLogHandler(logging.Handler):
+    """Logging handler that writes records to a CSV file."""
+
+    def __init__(self, csv_path: Path) -> None:
+        super().__init__()
+        self.csv_path = csv_path
+        self.fieldnames = ["asctime", "name", "levelname", "message"]
+        self.csv_path.parent.mkdir(parents=True, exist_ok=True)
+        self.file = open(self.csv_path, mode="a", encoding="utf-8", newline="")
+        self.writer = csv.DictWriter(self.file, fieldnames=self.fieldnames)
+        if self.file.tell() == 0:
+            self.writer.writeheader()
+
+    def emit(self, record: logging.LogRecord) -> None:
+        time_str = logging.Formatter("%(asctime)s").formatTime(record, datefmt="%Y-%m-%d %H:%M:%S")
+        self.writer.writerow(
+            {
+                "asctime": time_str,
+                "name": record.name,
+                "levelname": record.levelname,
+                "message": record.getMessage(),
+            }
+        )
+        self.file.flush()
+
+    def close(self) -> None:
+        try:
+            self.file.close()
+        finally:
+            super().close()
 
 
 def setup_device(device_str: str = "auto") -> str:
@@ -30,30 +63,36 @@ def setup_device(device_str: str = "auto") -> str:
 
 
 def setup_logger(log_dir: Path, name: str = "training") -> logging.Logger:
-    """Setup logger to file and console."""
+    """Setup logger to file, CSV, and console."""
     log_dir.mkdir(parents=True, exist_ok=True)
-    
+
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
-    
+    logger.handlers.clear()
+
     # File handler
     fh = logging.FileHandler(log_dir / f"{name}.log")
     fh.setLevel(logging.INFO)
-    
+
+    # CSV handler
+    csv_handler = CSVLogHandler(log_dir / f"{name}.csv")
+    csv_handler.setLevel(logging.INFO)
+
     # Console handler
     ch = logging.StreamHandler()
     ch.setLevel(logging.INFO)
-    
+
     # Formatter
     formatter = logging.Formatter(
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
     fh.setFormatter(formatter)
     ch.setFormatter(formatter)
-    
+
     logger.addHandler(fh)
+    logger.addHandler(csv_handler)
     logger.addHandler(ch)
-    
+
     return logger
 
 
