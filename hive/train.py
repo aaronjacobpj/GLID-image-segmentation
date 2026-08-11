@@ -133,9 +133,9 @@ class Trainer:
             total_iou += iou
             total_acc += acc
             num_batches += 1
-            
+
             pbar.set_postfix({"loss": f"{loss.item():.4f}"}, refresh=False)
-        
+            
         avg_loss = total_loss / num_batches
         avg_iou = total_iou / num_batches
         avg_acc = total_acc / num_batches
@@ -177,7 +177,7 @@ class Trainer:
     
     def train(self, epochs: int, scheduler: Optional[_LRScheduler] = None, patience: Optional[int] = None) -> None:
         """
-        Train model.
+            set_seed(args.seed)
         
         Args:
             epochs: Number of epochs
@@ -307,11 +307,17 @@ def build_run_name(
     learning_rate: float,
     optimizer: str,
     batch_size: int,
+    seed: Optional[int] = None,
     suffix: Optional[str] = None,
 ) -> str:
-    """Build a stable basename for logs, checkpoints, and metrics."""
+    """Build a stable basename for logs, checkpoints, and metrics.
+
+    Includes model, optimizer, lr, batch size, and optional seed/suffix.
+    """
     lr_str = f"{learning_rate:.0e}".replace("+0", "").replace("-0", "-")
     parts = [model_name, optimizer, f"lr{lr_str}", f"bs{batch_size}"]
+    if seed is not None:
+        parts.append(f"s{seed}")
     if suffix:
         parts.append(str(suffix))
     return "_".join(parts)
@@ -389,6 +395,7 @@ def tune_hyperparameters(
         optimizers,
         batch_sizes,
     ):
+        # Set up config for this run
         config_copy = deepcopy(config)
         config_copy.data.batch_size = batch_size
         config_copy.training.epochs = epochs
@@ -398,7 +405,10 @@ def tune_hyperparameters(
         assert config_copy.logs_dir is not None, "Logs directory is None"
         assert config_copy.checkpoint_dir is not None, "Checkpoint directory is None"
 
-        run_name = build_run_name(model_name, lr, optimizer_name, batch_size)
+        # Apply seed for reproducibility per run
+        set_seed(seed)
+
+        run_name = build_run_name(model_name, lr, optimizer_name, batch_size, seed=seed)
         logger = setup_logger(config_copy.logs_dir, name=run_name)
         logger.info(
             f"Hyperparameter tuning job: model={model_name}, optimizer={optimizer_name}, "
@@ -493,6 +503,12 @@ def main(argv: Optional[List[str]] = None) -> None:
         help="Learning rate",
     )
     parser.add_argument(
+        "--seed",
+        type=int,
+        default=config.data.random_seed,
+        help="Random seed",
+    )
+    parser.add_argument(
         "--optimizer",
         type=str,
         default=config.training.optimizer,
@@ -533,7 +549,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     args = parser.parse_args(argv)
     
     # Setup
-    set_seed(42)
+    set_seed(args.seed)
     config = Config()
     config.data.data_dir = Path(args.data_dir)
     config.data.batch_size = args.batch_size
@@ -542,10 +558,15 @@ def main(argv: Optional[List[str]] = None) -> None:
     config.training.optimizer = args.optimizer
     config.setup_directories()
     
-    # Construct run name (model + learning rate) and Logger
+    # Construct run name (model + learning rate + optimizer + batch + seed) and Logger
     model_name = args.model.lower()
-    lr_str = f"{config.training.learning_rate:.0e}"
-    run_name = f"{model_name}_lr{lr_str}"
+    run_name = build_run_name(
+        model_name,
+        config.training.learning_rate,
+        config.training.optimizer,
+        config.data.batch_size,
+        seed=args.seed,
+    )
     assert config.logs_dir is not None, "Logs directory is None"
     logger = setup_logger(config.logs_dir, name=run_name)
     logger.info(f"Config: {config}")

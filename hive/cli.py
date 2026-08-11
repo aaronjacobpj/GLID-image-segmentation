@@ -21,6 +21,8 @@ def run_train(args: argparse.Namespace) -> None:
         args.optimizer,
         "--model",
         args.model,
+        "--seed",
+        str(args.seed),
     ]
 
     if args.train_dir:
@@ -109,6 +111,12 @@ def main() -> None:
         choices=["adam", "sgd"],
         help="Optimizer",
     )
+    train_parser.add_argument(
+        "--seed",
+        type=int,
+        default=config.data.random_seed,
+        help="Random seed",
+    )
 
     tune_parser = subparsers.add_parser("tune", help="Run hyperparameter tuning")
     tune_parser.add_argument(
@@ -167,6 +175,12 @@ def main() -> None:
         type=int,
         default=config.training.patience,
         help="Early stopping patience for each tuning run",
+    )
+    tune_parser.add_argument(
+        "--seed",
+        type=int,
+        default=config.data.random_seed,
+        help="Random seed for tuning runs",
     )
 
     infer_parser = subparsers.add_parser("infer", help="Run inference only")
@@ -272,6 +286,7 @@ def main() -> None:
             optimizers=args.optimizer,
             batch_sizes=args.batch_size,
             patience=args.patience,
+            seed=args.seed,
         )
     elif args.command == "infer":
         run_inference(args)
