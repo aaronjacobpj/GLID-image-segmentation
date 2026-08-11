@@ -8,7 +8,7 @@ simple CLI overrides for `data_dir` and `output_dir`.
 """
 from pathlib import Path
 import argparse
-from .configs import HyperGrid
+from .config import HyperGrid
 import hive
 
 
