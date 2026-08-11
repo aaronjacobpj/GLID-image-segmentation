@@ -19,7 +19,7 @@ from .utils import (
     get_pred_mask,
     set_seed,
 )
-from .train import Trainer, create_optimizer, create_scheduler
+from .train import Trainer, create_optimizer, create_scheduler, tune_hyperparameters
 
 __version__ = "1.0.0"
 __author__ = "GLID Team"
@@ -47,4 +47,5 @@ __all__ = [
     "Trainer",
     "create_optimizer",
     "create_scheduler",
+    "tune_hyperparameters",
 ]

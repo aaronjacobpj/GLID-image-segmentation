@@ -1,9 +1,8 @@
 import torch
 import torchvision
 import torch.nn as nn
-from torchvision import transforms, models
+from torchvision import models
 from torch.nn import functional as F
-import torchvision.transforms.functional as TF
 from typing import Tuple
 
 

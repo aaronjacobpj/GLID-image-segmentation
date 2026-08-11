@@ -5,6 +5,8 @@ KISS principle: Simple, clean, and focused.
 
 import logging
 import csv
+from copy import deepcopy
+from itertools import product
 import torch
 import torch.nn as nn
 from torch.optim import Adam, SGD
@@ -13,7 +15,7 @@ from torch.utils.data import DataLoader
 import pandas as pd
 from pathlib import Path
 from tqdm import tqdm
-from typing import Tuple, Optional, List, Dict
+from typing import Tuple, Optional, List, Dict, Sequence, Any
 import argparse
 
 from .config import Config
@@ -300,6 +302,168 @@ def create_scheduler(optimizer: torch.optim.Optimizer, config: Config) -> Option
         return None
 
 
+def build_run_name(
+    model_name: str,
+    learning_rate: float,
+    optimizer: str,
+    batch_size: int,
+    suffix: Optional[str] = None,
+) -> str:
+    """Build a stable basename for logs, checkpoints, and metrics."""
+    lr_str = f"{learning_rate:.0e}".replace("+0", "").replace("-0", "-")
+    parts = [model_name, optimizer, f"lr{lr_str}", f"bs{batch_size}"]
+    if suffix:
+        parts.append(str(suffix))
+    return "_".join(parts)
+
+
+def build_model(model_name: str, config: Config) -> nn.Module:
+    """Construct a model by name."""
+    model_name = model_name.lower()
+    if model_name == "unet":
+        return UNet(
+            in_channels=config.model.input_channels,
+            out_channels=config.model.output_channels,
+            encoder_channels=config.model.encoder_channels,
+        )
+    if model_name == "deeplab":
+        return DeepLabV3Plus(num_classes=config.model.output_channels)
+    if model_name == "swin":
+        return SwinModel(
+            channels=256,
+            out_size=config.data.image_size,
+            classes=config.model.output_channels,
+            pretrained=False,
+        )
+    raise ValueError(f"Unknown model architecture: {model_name}")
+
+
+def tune_hyperparameters(
+    config: Config,
+    data_dir: str,
+    train_dir: Optional[str],
+    val_dir: Optional[str],
+    test_dir: Optional[str],
+    subset_size: Optional[int],
+    epochs: int,
+    model_names: Sequence[str],
+    learning_rates: Sequence[float],
+    optimizers: Sequence[str],
+    batch_sizes: Sequence[int],
+    patience: Optional[int] = None,
+    seed: int = 42,
+) -> None:
+    """Run a grid search over model and training hyperparameters."""
+    config.setup_directories()
+    assert config.logs_dir is not None, "Logs directory is None"
+    assert config.checkpoint_dir is not None, "Checkpoint directory is None"
+
+    summary_path = config.logs_dir / "hyperparameter_tuning_summary.csv"
+    if not summary_path.exists():
+        with open(summary_path, "w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(
+                f,
+                fieldnames=[
+                    "run_name",
+                    "model",
+                    "optimizer",
+                    "learning_rate",
+                    "batch_size",
+                    "epochs",
+                    "subset_size",
+                    "best_val_iou",
+                    "best_val_loss",
+                    "train_loss",
+                    "val_loss",
+                    "train_iou",
+                    "val_iou",
+                    "train_accuracy",
+                    "val_accuracy",
+                ],
+            )
+            writer.writeheader()
+
+    for model_name, lr, optimizer_name, batch_size in product(
+        model_names,
+        learning_rates,
+        optimizers,
+        batch_sizes,
+    ):
+        config_copy = deepcopy(config)
+        config_copy.data.batch_size = batch_size
+        config_copy.training.epochs = epochs
+        config_copy.training.learning_rate = lr
+        config_copy.training.optimizer = optimizer_name
+        config_copy.setup_directories()
+        assert config_copy.logs_dir is not None, "Logs directory is None"
+        assert config_copy.checkpoint_dir is not None, "Checkpoint directory is None"
+
+        run_name = build_run_name(model_name, lr, optimizer_name, batch_size)
+        logger = setup_logger(config_copy.logs_dir, name=run_name)
+        logger.info(
+            f"Hyperparameter tuning job: model={model_name}, optimizer={optimizer_name}, "
+            f"lr={lr}, batch_size={batch_size}, epochs={epochs}, subset_size={subset_size}"
+        )
+
+        train_loader, val_loader, test_loader = create_dataloaders(
+            data_dir=str(Path(data_dir)) if train_dir is None else None,
+            train_dir=train_dir,
+            val_dir=val_dir,
+            test_dir=test_dir,
+            batch_size=config_copy.data.batch_size,
+            image_size=config_copy.data.image_size,
+            num_workers=config_copy.data.num_workers,
+            subset_size=subset_size,
+        )
+
+        model = build_model(model_name, config_copy)
+        loss_fn = DiceBCELoss(
+            weight_bce=config_copy.loss.weight_bce,
+            weight_dice=config_copy.loss.weight_dice,
+            pos_weight=config_copy.loss.pos_weight,
+            device=setup_device(config_copy.training.device),
+        )
+        optimizer = create_optimizer(model, config_copy)
+        scheduler = create_scheduler(optimizer, config_copy)
+
+        trainer = Trainer(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            loss_fn=loss_fn,
+            optimizer=optimizer,
+            device=setup_device(config_copy.training.device),
+            config=config_copy,
+            logger=logger,
+            run_name=run_name,
+        )
+        trainer.train(epochs=epochs, scheduler=scheduler, patience=patience)
+
+        final_row = trainer.history.iloc[-1].to_dict() if not trainer.history.empty else {}
+        row: Dict[str, Any] = {
+            "run_name": run_name,
+            "model": model_name,
+            "optimizer": optimizer_name,
+            "learning_rate": lr,
+            "batch_size": batch_size,
+            "epochs": epochs,
+            "subset_size": subset_size,
+            "best_val_iou": trainer.best_val_iou,
+            "best_val_loss": final_row.get("val_loss", None),
+            "train_loss": final_row.get("train_loss", None),
+            "val_loss": final_row.get("val_loss", None),
+            "train_iou": final_row.get("train_iou", None),
+            "val_iou": final_row.get("val_iou", None),
+            "train_accuracy": final_row.get("train_accuracy", None),
+            "val_accuracy": final_row.get("val_accuracy", None),
+        }
+        with open(summary_path, "a", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=row.keys())
+            writer.writerow(row)
+
+        logger.info(f"Completed tuning run {run_name}. Summary saved to {summary_path}")
+
+
 def main(argv: Optional[List[str]] = None) -> None:
     """Main training pipeline."""
     config = Config()
@@ -327,6 +491,13 @@ def main(argv: Optional[List[str]] = None) -> None:
         type=float,
         default=config.training.learning_rate,
         help="Learning rate",
+    )
+    parser.add_argument(
+        "--optimizer",
+        type=str,
+        default=config.training.optimizer,
+        choices=["adam", "sgd"],
+        help="Optimizer",
     )
     parser.add_argument(
         "--model",
@@ -368,6 +539,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     config.data.batch_size = args.batch_size
     config.training.epochs = args.epochs
     config.training.learning_rate = args.lr
+    config.training.optimizer = args.optimizer
     config.setup_directories()
     
     # Construct run name (model + learning rate) and Logger

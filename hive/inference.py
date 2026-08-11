@@ -5,7 +5,6 @@ KISS principle: Simple inference pipeline.
 
 import torch
 import numpy as np
-from pathlib import Path
 from PIL import Image
 import argparse
 from typing import Tuple, Optional, List

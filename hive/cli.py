@@ -17,6 +17,8 @@ def run_train(args: argparse.Namespace) -> None:
         str(args.epochs),
         "--lr",
         str(args.lr),
+        "--optimizer",
+        args.optimizer,
         "--model",
         args.model,
     ]
@@ -100,6 +102,72 @@ def main() -> None:
         default=None,
         help="Use only the first N samples from each dataset",
     )
+    train_parser.add_argument(
+        "--optimizer",
+        type=str,
+        default="adam",
+        choices=["adam", "sgd"],
+        help="Optimizer",
+    )
+
+    tune_parser = subparsers.add_parser("tune", help="Run hyperparameter tuning")
+    tune_parser.add_argument(
+        "--data-dir",
+        type=str,
+        default=str(config.data.data_dir),
+        help="Path to dataset root",
+    )
+    tune_parser.add_argument("--train-dir", type=str, default=None, help="Path to separate train dataset folder")
+    tune_parser.add_argument("--val-dir", type=str, default=None, help="Path to separate validation dataset folder")
+    tune_parser.add_argument("--test-dir", type=str, default=None, help="Path to separate test dataset folder")
+    tune_parser.add_argument(
+        "--epochs",
+        type=int,
+        default=config.training.epochs,
+        help="Number of epochs per tuning run",
+    )
+    tune_parser.add_argument(
+        "--model",
+        type=str,
+        nargs="*",
+        default=["unet", "deeplab", "swin"],
+        choices=["unet", "deeplab", "swin"],
+        help="Model architectures to tune",
+    )
+    tune_parser.add_argument(
+        "--lr",
+        type=float,
+        nargs="*",
+        default=[0.01, 0.001, 0.0005, 0.0001],
+        help="Learning rate values to try",
+    )
+    tune_parser.add_argument(
+        "--optimizer",
+        type=str,
+        nargs="*",
+        default=["adam", "sgd"],
+        choices=["adam", "sgd"],
+        help="Optimizers to try",
+    )
+    tune_parser.add_argument(
+        "--batch-size",
+        type=int,
+        nargs="*",
+        default=[config.data.batch_size],
+        help="Batch sizes to try",
+    )
+    tune_parser.add_argument(
+        "--subset-size",
+        type=int,
+        default=None,
+        help="Use only the first N samples from each dataset",
+    )
+    tune_parser.add_argument(
+        "--patience",
+        type=int,
+        default=config.training.patience,
+        help="Early stopping patience for each tuning run",
+    )
 
     infer_parser = subparsers.add_parser("infer", help="Run inference only")
     infer_parser.add_argument("--model-path", type=str, required=True, help="Path to model checkpoint")
@@ -148,6 +216,13 @@ def main() -> None:
         help="Learning rate",
     )
     all_parser.add_argument(
+        "--optimizer",
+        type=str,
+        default=config.training.optimizer,
+        choices=["adam", "sgd"],
+        help="Optimizer",
+    )
+    all_parser.add_argument(
         "--model",
         type=str,
         default="unet",
@@ -181,6 +256,23 @@ def main() -> None:
 
     if args.command == "train":
         run_train(args)
+    elif args.command == "tune":
+        from .train import tune_hyperparameters
+
+        tune_hyperparameters(
+            config=config,
+            data_dir=args.data_dir,
+            train_dir=args.train_dir,
+            val_dir=args.val_dir,
+            test_dir=args.test_dir,
+            subset_size=args.subset_size,
+            epochs=args.epochs,
+            model_names=args.model,
+            learning_rates=args.lr,
+            optimizers=args.optimizer,
+            batch_sizes=args.batch_size,
+            patience=args.patience,
+        )
     elif args.command == "infer":
         run_inference(args)
     elif args.command == "all":
