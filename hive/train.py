@@ -18,7 +18,13 @@ from tqdm import tqdm
 from typing import Tuple, Optional, List, Dict, Sequence, Any
 import argparse
 
-from .config import Config
+from .config import (
+    Config,
+    hash_run_config,
+    _completed_hashes_path,
+    _load_completed_hashes,
+    _mark_run_completed,
+)
 from .data import create_dataloaders
 from .deeplab import DeepLabV3Plus
 from .transformer import SwinModel
@@ -365,6 +371,14 @@ def tune_hyperparameters(
     assert config.checkpoint_dir is not None, "Checkpoint directory is None"
 
     summary_path = config.logs_dir / "hyperparameter_tuning_summary.csv"
+
+    # Load hashes of runs that already completed so we can skip them on resume.
+    completed_hashes = _load_completed_hashes(config.logs_dir)
+    if completed_hashes:
+        logging.getLogger(__name__).info(
+            f"Resuming tuning — {len(completed_hashes)} run(s) already completed."
+        )
+
     if not summary_path.exists():
         with open(summary_path, "w", encoding="utf-8", newline="") as f:
             writer = csv.DictWriter(
@@ -395,6 +409,26 @@ def tune_hyperparameters(
         optimizers,
         batch_sizes,
     ):
+        # ------------------------------------------------------------------
+        # Skip this configuration if it was already completed.
+        # ------------------------------------------------------------------
+        run_hash = hash_run_config(
+            model_name=model_name,
+            learning_rate=lr,
+            optimizer=optimizer_name,
+            batch_size=batch_size,
+            epochs=epochs,
+            subset_size=subset_size,
+            seed=seed,
+        )
+        if run_hash in completed_hashes:
+            logging.getLogger(__name__).info(
+                f"Skipping already-completed run: model={model_name}, "
+                f"optimizer={optimizer_name}, lr={lr}, batch_size={batch_size} "
+                f"[hash={run_hash[:12]}...]"
+            )
+            continue
+
         # Set up config for this run
         config_copy = deepcopy(config)
         config_copy.data.batch_size = batch_size
@@ -471,7 +505,13 @@ def tune_hyperparameters(
             writer = csv.DictWriter(f, fieldnames=row.keys())
             writer.writerow(row)
 
-        logger.info(f"Completed tuning run {run_name}. Summary saved to {summary_path}")
+        # Mark this configuration as done so it is skipped on resume.
+        _mark_run_completed(config.logs_dir, run_hash)
+        completed_hashes.add(run_hash)
+        logger.info(
+            f"Completed tuning run {run_name} [hash={run_hash[:12]}...]. "
+            f"Summary saved to {summary_path}"
+        )
 
 
 def main(argv: Optional[List[str]] = None) -> None:

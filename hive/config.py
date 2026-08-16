@@ -3,9 +3,11 @@ Configuration settings for model training.
 KISS principle: Keep It Simple, Structured.
 """
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, Set
 from os import environ
 
 
@@ -85,3 +87,79 @@ class Config:
         """Create necessary directories."""
         for path in [self.output_dir, self.checkpoint_dir, self.logs_dir]:
             path.mkdir(parents=True, exist_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Run-fingerprinting helpers
+# These functions encode the identity of a hyperparameter-tuning run so that
+# completed runs can be skipped when resuming after a crash or power loss.
+# ---------------------------------------------------------------------------
+
+def hash_run_config(
+    model_name: str,
+    learning_rate: float,
+    optimizer: str,
+    batch_size: int,
+    epochs: int,
+    subset_size: Optional[int],
+    seed: int,
+) -> str:
+    """Return a deterministic SHA-256 fingerprint of a tuning run's config.
+
+    The hash is derived from every parameter that affects training so that
+    two identical configurations always produce the same digest.  This lets
+    ``tune_hyperparameters`` skip runs that already completed (even after a
+    crash or power loss).
+
+    Args:
+        model_name:    Model architecture string (e.g. 'unet').
+        learning_rate: Learning rate float.
+        optimizer:     Optimizer name string.
+        batch_size:    Mini-batch size.
+        epochs:        Number of training epochs.
+        subset_size:   Optional dataset size cap (None means full dataset).
+        seed:          Random seed used for the run.
+
+    Returns:
+        Hex-encoded SHA-256 digest (64 characters).
+    """
+    config_dict: Dict[str, Any] = {
+        "model": model_name.lower(),
+        "lr": learning_rate,
+        "optimizer": optimizer.lower(),
+        "batch_size": batch_size,
+        "epochs": epochs,
+        "subset_size": subset_size,
+        "seed": seed,
+    }
+    # json.dumps with sort_keys guarantees a stable byte sequence.
+    payload = json.dumps(config_dict, sort_keys=True).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _completed_hashes_path(logs_dir: Path) -> Path:
+    """Return the path of the file that stores completed run hashes."""
+    return logs_dir / "hyperparameter_tuning_completed.txt"
+
+
+def _load_completed_hashes(logs_dir: Path) -> Set[str]:
+    """Load the set of hashes for already-completed tuning runs.
+
+    Returns an empty set if the file does not yet exist.
+    """
+    path = _completed_hashes_path(logs_dir)
+    if not path.exists():
+        return set()
+    with open(path, "r", encoding="utf-8") as f:
+        return {line.strip() for line in f if line.strip()}
+
+
+def _mark_run_completed(logs_dir: Path, run_hash: str) -> None:
+    """Append *run_hash* to the completed-runs file.
+
+    Appending (rather than rewriting) is crash-safe: a partial write leaves
+    previous entries intact.
+    """
+    path = _completed_hashes_path(logs_dir)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(run_hash + "\n")

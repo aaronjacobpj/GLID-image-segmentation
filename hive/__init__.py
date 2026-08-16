@@ -5,7 +5,7 @@ A clean, simple training pipeline for glacial lake segmentation.
 KISS principle: Keep It Simple, Structured.
 """
 
-from .config import Config, DataConfig, ModelConfig, TrainingConfig, LossConfig
+from .config import Config, DataConfig, ModelConfig, TrainingConfig, LossConfig, hash_run_config
 from .data import GLIDDataset, create_dataloaders
 from .deeplab import DeepLabV3Plus
 from .transformer import SwinModel
@@ -31,6 +31,7 @@ __all__ = [
     "ModelConfig",
     "TrainingConfig",
     "LossConfig",
+    "hash_run_config",
     "GLIDDataset",
     "create_dataloaders",
     "UNet",
