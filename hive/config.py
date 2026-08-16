@@ -41,6 +41,7 @@ class TrainingConfig:
     scheduler: Optional[str] = "cosine"
     warmup_epochs: int = 2
     patience: int = 10
+    save_epoch: bool = False
     device: str = "auto"  # 'cuda', 'mps', 'cpu', or 'auto'
 
 

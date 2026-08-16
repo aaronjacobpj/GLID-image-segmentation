@@ -33,6 +33,8 @@ def run_train(args: argparse.Namespace) -> None:
         argv.extend(["--test-dir", args.test_dir])
     if args.subset_size is not None:
         argv.extend(["--subset-size", str(args.subset_size)])
+    if args.save_epoch:
+        argv.extend(["--save-epoch"])
 
     train_module.main(argv)
 
@@ -117,6 +119,12 @@ def main() -> None:
         default=config.data.random_seed,
         help="Random seed",
     )
+    train_parser.add_argument(
+        "--save-epoch",
+        action="store_true",
+        default=config.training.save_epoch,
+        help="Save checkpoint filenames with epoch number instead of overwriting",
+    )
 
     tune_parser = subparsers.add_parser("tune", help="Run hyperparameter tuning")
     tune_parser.add_argument(
@@ -181,6 +189,12 @@ def main() -> None:
         type=int,
         default=config.data.random_seed,
         help="Random seed for tuning runs",
+    )
+    tune_parser.add_argument(
+        "--save-epoch",
+        action="store_true",
+        default=config.training.save_epoch,
+        help="Save checkpoint filenames with epoch number instead of overwriting",
     )
 
     infer_parser = subparsers.add_parser("infer", help="Run inference only")
@@ -265,6 +279,12 @@ def main() -> None:
         choices=["unet", "deeplab", "swin"],
         help="Model type for inference",
     )
+    all_parser.add_argument(
+        "--save-epoch",
+        action="store_true",
+        default=config.training.save_epoch,
+        help="Save checkpoint filenames with epoch number instead of overwriting",
+    )
 
     args = parser.parse_args()
 
@@ -287,6 +307,7 @@ def main() -> None:
             batch_sizes=args.batch_size,
             patience=args.patience,
             seed=args.seed,
+            save_epoch=args.save_epoch,
         )
     elif args.command == "infer":
         run_inference(args)

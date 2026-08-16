@@ -54,6 +54,7 @@ class Trainer:
         config: Config,
         logger: logging.Logger,
         run_name: str = "training",
+        save_epoch: bool = False,
     ) -> None:
         """Initialize trainer."""
         self.model = model.to(device)
@@ -65,6 +66,7 @@ class Trainer:
         self.config = config
         self.logger = logger
         self.run_name = run_name
+        self.save_epoch = save_epoch
         
         # Metrics
         self.iou_metric = IoUMetric()
@@ -235,7 +237,7 @@ class Trainer:
             if val_iou > self.best_val_iou:
                 self.best_val_iou = val_iou
                 patience_counter = 0
-                self._save_checkpoint(epoch)
+                self._save_checkpoint(epoch if self.save_epoch else None)
             else:
                 patience_counter += 1
             
@@ -260,12 +262,14 @@ class Trainer:
         self.history.to_csv(history_path, index=False)
         self.logger.info(f"Training complete. History saved to {history_path}")
     
-    def _save_checkpoint(self, epoch: int):
+    def _save_checkpoint(self, epoch: Optional[int] = None):
         """Save model checkpoint."""
 
         assert self.config.checkpoint_dir is not None, "Checkpoint directory is None"
-
-        checkpoint_path = self.config.checkpoint_dir / f"{self.run_name}_best_model_epoch{epoch+1}.pth"
+        
+        # Handle case where epoch is None (e.g. for early stopping)
+        state = f"_epoch{epoch+1}" if epoch is not None else ""
+        checkpoint_path = self.config.checkpoint_dir / f"{self.run_name}_best_model{state}.pth"
         torch.save(self.model.state_dict(), checkpoint_path)
         self.logger.info(f"Saved checkpoint: {checkpoint_path}")
 
@@ -364,6 +368,7 @@ def tune_hyperparameters(
     batch_sizes: Sequence[int],
     patience: Optional[int] = None,
     seed: int = 42,
+    save_epoch: bool = False,
 ) -> None:
     """Run a grid search over model and training hyperparameters."""
     config.setup_directories()
@@ -480,6 +485,7 @@ def tune_hyperparameters(
             config=config_copy,
             logger=logger,
             run_name=run_name,
+            save_epoch=save_epoch,
         )
         trainer.train(epochs=epochs, scheduler=scheduler, patience=patience)
 
@@ -586,6 +592,12 @@ def main(argv: Optional[List[str]] = None) -> None:
         default=None,
         help="Use only the first N samples from each dataset",
     )
+    parser.add_argument(
+        "--save-epoch",
+        action="store_true",
+        default=config.training.save_epoch,
+        help="Save checkpoint filenames with epoch number instead of overwriting",
+    )
     args = parser.parse_args(argv)
     
     # Setup
@@ -596,6 +608,7 @@ def main(argv: Optional[List[str]] = None) -> None:
     config.training.epochs = args.epochs
     config.training.learning_rate = args.lr
     config.training.optimizer = args.optimizer
+    config.training.save_epoch = args.save_epoch
     config.setup_directories()
     
     # Construct run name (model + learning rate + optimizer + batch + seed) and Logger
@@ -676,6 +689,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         config=config,
         logger=logger,
         run_name=run_name,
+        save_epoch=args.save_epoch,
     )
     
     # Train
