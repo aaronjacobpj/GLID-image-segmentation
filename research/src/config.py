@@ -19,8 +19,9 @@ class HyperGrid:
     models: List[str] = field(default_factory=lambda: ["unet", "deeplab", "swin"])
     lrs: List[float] = field(default_factory=lambda: [1e-3, 5e-4, 1e-4])
     optimizers: List[str] = field(default_factory=lambda: ["adam", "sgd"])
-    batch_sizes: List[int] = field(default_factory=lambda: [16, 32, 64])
-    epochs: int = 50
-    subset_size: Optional[int] = 1024
+    batch_sizes: List[int] = field(default_factory=lambda: [8, 16, 32, 64])
+    epochs: int = 100
+    subset_size: Optional[int] = 2000
     patience: Optional[int] = 5
     seed: int = 42
+    save_epoch: bool = False
