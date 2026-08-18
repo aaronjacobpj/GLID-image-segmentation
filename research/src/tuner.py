@@ -82,7 +82,7 @@ def main(argv=None):
         type=str,
         nargs="*",
         default=grid.optimizers,
-        choices=["adam", "sgd"],
+        choices=["adam", "sgd", "adamw"],
         help="Optimizers to try",
     )
     parser.add_argument(
