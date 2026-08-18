@@ -37,7 +37,7 @@ class TrainingConfig:
     epochs: int = 50
     learning_rate: float = 1e-3
     weight_decay: float = 1e-5
-    optimizer: str = "adam"
+    optimizer: str = "adamw"
     scheduler: Optional[str] = "cosine"
     warmup_epochs: int = 2
     patience: int = 10
@@ -49,8 +49,8 @@ class TrainingConfig:
 class LossConfig:
     """Loss function configuration."""
     loss_type: str = "dice_bce"  # 'dice_bce', 'dice', 'bce'
-    weight_bce: float = 0.5
-    weight_dice: float = 0.5
+    weight_bce: float = 0.4
+    weight_dice: float = 0.6
     smooth: float = 1e-5
     pos_weight: float = 10.0
 

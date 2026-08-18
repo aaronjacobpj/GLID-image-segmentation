@@ -181,7 +181,7 @@ class SwinModel(nn.Module):
                 channels * 4,
                 channels,
                 kernel_size=7,
-                padding=1,
+                padding=3,
                 bias=False
             ),
             nn.BatchNorm2d(channels),
@@ -191,7 +191,7 @@ class SwinModel(nn.Module):
                 channels,
                 channels,
                 kernel_size=5,
-                padding=1,
+                padding=2,
                 bias=False
             ),
             nn.BatchNorm2d(channels),
@@ -201,7 +201,8 @@ class SwinModel(nn.Module):
         self.classifier = nn.Conv2d(
             channels,
             classes,
-            kernel_size=3
+            kernel_size=3,
+            padding=1
         )
 
     def forward(self, X: torch.Tensor) -> torch.Tensor:

@@ -9,7 +9,7 @@ from copy import deepcopy
 from itertools import product
 import torch
 import torch.nn as nn
-from torch.optim import Adam, SGD
+from torch.optim import Adam, AdamW, SGD
 from torch.optim.lr_scheduler import CosineAnnealingLR, PolynomialLR, _LRScheduler
 from torch.utils.data import DataLoader
 import pandas as pd
@@ -159,7 +159,7 @@ class Trainer:
         total_acc = 0.0
         num_batches = 0
         
-        with torch.no_grad():
+        with torch.inference_mode():
             pbar = tqdm(self.val_loader, desc="Validation")
             for images, labels in pbar:
                 images = images.to(self.device)
@@ -278,6 +278,12 @@ def create_optimizer(model: nn.Module, config: Config) -> torch.optim.Optimizer:
     """Create optimizer."""
     if config.training.optimizer.lower() == "adam":
         return Adam(
+            model.parameters(),
+            lr=config.training.learning_rate,
+            weight_decay=config.training.weight_decay,
+        )
+    elif config.training.optimizer.lower() == "adamw":
+        return AdamW(
             model.parameters(),
             lr=config.training.learning_rate,
             weight_decay=config.training.weight_decay,
@@ -558,7 +564,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         "--optimizer",
         type=str,
         default=config.training.optimizer,
-        choices=["adam", "sgd"],
+        choices=["adam", "adamw", "sgd"],
         help="Optimizer",
     )
     parser.add_argument(

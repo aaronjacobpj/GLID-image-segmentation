@@ -78,7 +78,7 @@ class Inference:
         image_tensor = torch.from_numpy(image_array).permute(2, 0, 1).unsqueeze(0).to(self.device)
         
         # Inference
-        with torch.no_grad():
+        with torch.inference_mode():
             logits = self.model(image_tensor)
         
         # Predictions
