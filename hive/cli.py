@@ -110,7 +110,7 @@ def main() -> None:
         "--optimizer",
         type=str,
         default="adam",
-        choices=["adam", "sgd"],
+        choices=["adam", "sgd", "adamw"],
         help="Optimizer",
     )
     train_parser.add_argument(
