@@ -15,7 +15,7 @@ from os import environ
 class DataConfig:
     """Data loading and preprocessing configuration."""
     data_dir: Path = Path(environ.get("DATA_DIR") or "data")
-    image_size: int = 256
+    image_size: int = 512
     batch_size: int = 16
     num_workers: int = 4
     train_split: float = 0.8
