@@ -115,7 +115,7 @@ class Decoder(nn.Module):
 
 
 class DeepLabV3Plus(nn.Module):
-    def __init__(self, num_classes: int) -> None:
+    def __init__(self, num_classes: int, output_size:int=256) -> None:
         super().__init__()
 
         self.backbone = Backbone()
