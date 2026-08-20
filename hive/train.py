@@ -35,6 +35,12 @@ from .utils import (
     DiceBCELoss,
     IoUMetric,
     PixelAccuracy,
+    PrecisionMetric,
+    RecallMetric,
+    F1ScoreMetric,
+    DiceScoreMetric,
+    MeanIoUMetric,
+    MeanDiceScoreMetric,
     get_pred_mask,
     set_seed,
 )
@@ -70,9 +76,15 @@ class Trainer:
         
         # Metrics
         self.iou_metric = IoUMetric()
+        self.mean_iou_metric = MeanIoUMetric()
         self.accuracy_metric = PixelAccuracy()
+        self.precision_metric = PrecisionMetric()
+        self.recall_metric = RecallMetric()
+        self.f1_metric = F1ScoreMetric()
+        self.dice_metric = DiceScoreMetric()
+        self.mean_dice_metric = MeanDiceScoreMetric()
         
-        # History (include accuracy)
+        # History (include accuracy, precision, recall, f1, dice, mean iou, mean dice)
         self.history = pd.DataFrame(
             columns=[
                 "epoch",
@@ -80,8 +92,20 @@ class Trainer:
                 "val_loss",
                 "train_iou",
                 "val_iou",
+                "train_mean_iou",
+                "val_mean_iou",
                 "train_accuracy",
                 "val_accuracy",
+                "train_precision",
+                "val_precision",
+                "train_recall",
+                "val_recall",
+                "train_f1",
+                "val_f1",
+                "train_dice",
+                "val_dice",
+                "train_mean_dice",
+                "val_mean_dice",
             ]
         )
         
@@ -104,19 +128,37 @@ class Trainer:
                         "val_loss",
                         "train_iou",
                         "val_iou",
+                        "train_mean_iou",
+                        "val_mean_iou",
                         "train_accuracy",
                         "val_accuracy",
+                        "train_precision",
+                        "val_precision",
+                        "train_recall",
+                        "val_recall",
+                        "train_f1",
+                        "val_f1",
+                        "train_dice",
+                        "val_dice",
+                        "train_mean_dice",
+                        "val_mean_dice",
                     ],
                 )
                 writer.writeheader()
     
-    def train_epoch(self) -> Tuple[float, float, float]:
+    def train_epoch(self) -> Tuple[float, float, float, float, float, float, float, float, float]:
         """Train one epoch."""
         self.model.train()
         
         total_loss = 0.0
         total_iou = 0.0
+        total_mean_iou = 0.0
         total_acc = 0.0
+        total_prec = 0.0
+        total_rec = 0.0
+        total_f1 = 0.0
+        total_dice = 0.0
+        total_mean_dice = 0.0
         num_batches = 0
         
         pbar = tqdm(self.train_loader, desc="Training")
@@ -136,27 +178,55 @@ class Trainer:
             
             # Metrics
             total_loss += loss.item()
-            iou = self.iou_metric(logits.detach(), labels.detach())
-            acc = self.accuracy_metric(logits.detach(), labels.detach())
-            total_iou += iou
-            total_acc += acc
+            detached_logits = logits.detach()
+            detached_labels = labels.detach()
+            total_iou += self.iou_metric(detached_logits, detached_labels)
+            total_mean_iou += self.mean_iou_metric(detached_logits, detached_labels)
+            total_acc += self.accuracy_metric(detached_logits, detached_labels)
+            total_prec += self.precision_metric(detached_logits, detached_labels)
+            total_rec += self.recall_metric(detached_logits, detached_labels)
+            total_f1 += self.f1_metric(detached_logits, detached_labels)
+            total_dice += self.dice_metric(detached_logits, detached_labels)
+            total_mean_dice += self.mean_dice_metric(detached_logits, detached_labels)
             num_batches += 1
 
             pbar.set_postfix({"loss": f"{loss.item():.4f}"}, refresh=False)
             
         avg_loss = total_loss / num_batches
         avg_iou = total_iou / num_batches
+        avg_mean_iou = total_mean_iou / num_batches
         avg_acc = total_acc / num_batches
+        avg_prec = total_prec / num_batches
+        avg_rec = total_rec / num_batches
+        avg_f1 = total_f1 / num_batches
+        avg_dice = total_dice / num_batches
+        avg_mean_dice = total_mean_dice / num_batches
 
-        return avg_loss, avg_iou, avg_acc
+        return (
+            avg_loss,
+            avg_iou,
+            avg_mean_iou,
+            avg_acc,
+            avg_prec,
+            avg_rec,
+            avg_f1,
+            avg_dice,
+            avg_mean_dice,
+        )
     
-    def validate(self) -> Tuple[float, float, float]:
+    def validate(self) -> Tuple[float, float, float, float, float, float, float, float, float]:
         """Validate on validation set."""
         self.model.eval()
         
         total_loss = 0.0
         total_iou = 0.0
+        total_mean_iou = 0.0
         total_acc = 0.0
+        total_prec = 0.0
+        total_rec = 0.0
+        total_f1 = 0.0
+        total_dice = 0.0
+        total_mean_dice = 0.0
         num_batches = 0
         
         with torch.inference_mode():
@@ -171,17 +241,37 @@ class Trainer:
                 
                 # Metrics
                 total_loss += loss.item()
-                iou = self.iou_metric(logits, labels)
-                acc = self.accuracy_metric(logits, labels)
-                total_iou += iou
-                total_acc += acc
+                total_iou += self.iou_metric(logits, labels)
+                total_mean_iou += self.mean_iou_metric(logits, labels)
+                total_acc += self.accuracy_metric(logits, labels)
+                total_prec += self.precision_metric(logits, labels)
+                total_rec += self.recall_metric(logits, labels)
+                total_f1 += self.f1_metric(logits, labels)
+                total_dice += self.dice_metric(logits, labels)
+                total_mean_dice += self.mean_dice_metric(logits, labels)
                 num_batches += 1
         
             avg_loss = total_loss / num_batches
             avg_iou = total_iou / num_batches
+            avg_mean_iou = total_mean_iou / num_batches
             avg_acc = total_acc / num_batches
+            avg_prec = total_prec / num_batches
+            avg_rec = total_rec / num_batches
+            avg_f1 = total_f1 / num_batches
+            avg_dice = total_dice / num_batches
+            avg_mean_dice = total_mean_dice / num_batches
 
-            return avg_loss, avg_iou, avg_acc
+            return (
+                avg_loss,
+                avg_iou,
+                avg_mean_iou,
+                avg_acc,
+                avg_prec,
+                avg_rec,
+                avg_f1,
+                avg_dice,
+                avg_mean_dice,
+            )
     
     def train(self, epochs: int, scheduler: Optional[_LRScheduler] = None, patience: Optional[int] = None) -> None:
         """
@@ -196,8 +286,28 @@ class Trainer:
         patience_counter = 0
         
         for epoch in range(epochs):
-            train_loss, train_iou, train_acc = self.train_epoch()
-            val_loss, val_iou, val_acc = self.validate()
+            (
+                train_loss,
+                train_iou,
+                train_mean_iou,
+                train_acc,
+                train_prec,
+                train_rec,
+                train_f1,
+                train_dice,
+                train_mean_dice,
+            ) = self.train_epoch()
+            (
+                val_loss,
+                val_iou,
+                val_mean_iou,
+                val_acc,
+                val_prec,
+                val_rec,
+                val_f1,
+                val_dice,
+                val_mean_dice,
+            ) = self.validate()
             
             # Learning rate scheduler
             if scheduler is not None:
@@ -210,8 +320,20 @@ class Trainer:
                 "val_loss": val_loss,
                 "train_iou": train_iou,
                 "val_iou": val_iou,
+                "train_mean_iou": train_mean_iou,
+                "val_mean_iou": val_mean_iou,
                 "train_accuracy": train_acc,
                 "val_accuracy": val_acc,
+                "train_precision": train_prec,
+                "val_precision": val_prec,
+                "train_recall": train_rec,
+                "val_recall": val_rec,
+                "train_f1": train_f1,
+                "val_f1": val_f1,
+                "train_dice": train_dice,
+                "val_dice": val_dice,
+                "train_mean_dice": train_mean_dice,
+                "val_mean_dice": val_mean_dice,
             }
             self.history = pd.concat([self.history, pd.DataFrame([row])], ignore_index=True)
             # Append metrics to live CSV
@@ -225,8 +347,20 @@ class Trainer:
                             "val_loss",
                             "train_iou",
                             "val_iou",
+                            "train_mean_iou",
+                            "val_mean_iou",
                             "train_accuracy",
                             "val_accuracy",
+                            "train_precision",
+                            "val_precision",
+                            "train_recall",
+                            "val_recall",
+                            "train_f1",
+                            "val_f1",
+                            "train_dice",
+                            "val_dice",
+                            "train_mean_dice",
+                            "val_mean_dice",
                         ],
                     )
                     writer.writerow(row)
@@ -245,7 +379,13 @@ class Trainer:
             msg = (
                 f"Epoch [{epoch+1:3d}/{epochs}] | "
                 f"Train Loss: {train_loss:.4f} Val Loss: {val_loss:.4f} | "
-                f"Train IoU: {train_iou:.4f} Val IoU: {val_iou:.4f}"
+                f"Train IoU: {train_iou:.4f} Val IoU: {val_iou:.4f} | "
+                f"Train mIoU: {train_mean_iou:.4f} Val mIoU: {val_mean_iou:.4f} | "
+                f"Train Dice: {train_dice:.4f} Val Dice: {val_dice:.4f} | "
+                f"Train mDice: {train_mean_dice:.4f} Val mDice: {val_mean_dice:.4f} | "
+                f"Train Prec: {train_prec:.4f} Val Prec: {val_prec:.4f} | "
+                f"Train Rec: {train_rec:.4f} Val Rec: {val_rec:.4f} | "
+                f"Train F1: {train_f1:.4f} Val F1: {val_f1:.4f}"
             )
             self.logger.info(msg)
             print(msg)
@@ -408,8 +548,20 @@ def tune_hyperparameters(
                     "val_loss",
                     "train_iou",
                     "val_iou",
+                    "train_mean_iou",
+                    "val_mean_iou",
                     "train_accuracy",
                     "val_accuracy",
+                    "train_precision",
+                    "val_precision",
+                    "train_recall",
+                    "val_recall",
+                    "train_f1",
+                    "val_f1",
+                    "train_dice",
+                    "val_dice",
+                    "train_mean_dice",
+                    "val_mean_dice",
                 ],
             )
             writer.writeheader()
@@ -510,8 +662,20 @@ def tune_hyperparameters(
             "val_loss": final_row.get("val_loss", None),
             "train_iou": final_row.get("train_iou", None),
             "val_iou": final_row.get("val_iou", None),
+            "train_mean_iou": final_row.get("train_mean_iou", None),
+            "val_mean_iou": final_row.get("val_mean_iou", None),
             "train_accuracy": final_row.get("train_accuracy", None),
             "val_accuracy": final_row.get("val_accuracy", None),
+            "train_precision": final_row.get("train_precision", None),
+            "val_precision": final_row.get("val_precision", None),
+            "train_recall": final_row.get("train_recall", None),
+            "val_recall": final_row.get("val_recall", None),
+            "train_f1": final_row.get("train_f1", None),
+            "val_f1": final_row.get("val_f1", None),
+            "train_dice": final_row.get("train_dice", None),
+            "val_dice": final_row.get("val_dice", None),
+            "train_mean_dice": final_row.get("train_mean_dice", None),
+            "val_mean_dice": final_row.get("val_mean_dice", None),
         }
         with open(summary_path, "a", encoding="utf-8", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=row.keys())

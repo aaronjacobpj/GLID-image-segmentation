@@ -219,6 +219,185 @@ class PixelAccuracy:
         return correct / total
 
 
+class PrecisionMetric:
+    """Precision metric for binary segmentation."""
+
+    def __init__(self, smooth: float = 1e-6, threshold: float = 0.5):
+        self.smooth = smooth
+        self.threshold = threshold
+
+    def __call__(
+        self,
+        logits: torch.Tensor,
+        targets: torch.Tensor,
+    ) -> float:
+        """
+        Compute precision.
+
+        Args:
+            logits: Model output (B, 1, H, W) or probabilities
+            targets: Ground truth (B, 1, H, W)
+
+        Returns:
+            Precision score
+        """
+        if logits.shape[1] == 1:
+            preds = (torch.sigmoid(logits) > self.threshold).float()
+        else:
+            preds = (logits > self.threshold).float()
+
+        tp = (preds * targets).sum().item()
+        fp = (preds * (1.0 - targets)).sum().item()
+
+        return (tp + self.smooth) / (tp + fp + self.smooth)
+
+
+class RecallMetric:
+    """Recall metric for binary segmentation."""
+
+    def __init__(self, smooth: float = 1e-6, threshold: float = 0.5):
+        self.smooth = smooth
+        self.threshold = threshold
+
+    def __call__(
+        self,
+        logits: torch.Tensor,
+        targets: torch.Tensor,
+    ) -> float:
+        """
+        Compute recall.
+
+        Args:
+            logits: Model output (B, 1, H, W) or probabilities
+            targets: Ground truth (B, 1, H, W)
+
+        Returns:
+            Recall score
+        """
+        if logits.shape[1] == 1:
+            preds = (torch.sigmoid(logits) > self.threshold).float()
+        else:
+            preds = (logits > self.threshold).float()
+
+        tp = (preds * targets).sum().item()
+        fn = ((1.0 - preds) * targets).sum().item()
+
+        return (tp + self.smooth) / (tp + fn + self.smooth)
+
+
+class F1ScoreMetric:
+    """F1 Score (Dice coefficient) metric for binary segmentation."""
+
+    def __init__(self, smooth: float = 1e-6, threshold: float = 0.5):
+        self.smooth = smooth
+        self.threshold = threshold
+
+    def __call__(
+        self,
+        logits: torch.Tensor,
+        targets: torch.Tensor,
+    ) -> float:
+        """
+        Compute F1 score.
+
+        Args:
+            logits: Model output (B, 1, H, W) or probabilities
+            targets: Ground truth (B, 1, H, W)
+
+        Returns:
+            F1 score
+        """
+        if logits.shape[1] == 1:
+            preds = (torch.sigmoid(logits) > self.threshold).float()
+        else:
+            preds = (logits > self.threshold).float()
+
+        tp = (preds * targets).sum().item()
+        fp = (preds * (1.0 - targets)).sum().item()
+        fn = ((1.0 - preds) * targets).sum().item()
+
+        return (2.0 * tp + self.smooth) / (2.0 * tp + fp + fn + self.smooth)
+
+
+class DiceScoreMetric(F1ScoreMetric):
+    """Dice score metric for binary segmentation (equivalent to F1 score)."""
+    pass
+
+
+DiceMetric = DiceScoreMetric
+
+
+class MeanIoUMetric:
+    """Mean Intersection over Union metric computed per sample in batch."""
+
+    def __init__(self, smooth: float = 1e-6, threshold: float = 0.5):
+        self.smooth = smooth
+        self.threshold = threshold
+
+    def __call__(
+        self,
+        logits: torch.Tensor,
+        targets: torch.Tensor,
+    ) -> float:
+        """
+        Compute mean IoU across samples in batch.
+
+        Args:
+            logits: Model output (B, 1, H, W) or probabilities
+            targets: Ground truth (B, 1, H, W)
+
+        Returns:
+            Mean IoU score across batch samples
+        """
+        if logits.shape[1] == 1:
+            preds = (torch.sigmoid(logits) > self.threshold).float()
+        else:
+            preds = (logits > self.threshold).float()
+
+        dims = tuple(range(1, preds.ndim))
+        intersection = (preds * targets).sum(dim=dims)
+        union = preds.sum(dim=dims) + targets.sum(dim=dims) - intersection
+        sample_iou = (intersection + self.smooth) / (union + self.smooth)
+        return sample_iou.mean().item()
+
+
+class MeanDiceScoreMetric:
+    """Mean Dice score (Dice coefficient / F1 score) computed per sample in batch."""
+
+    def __init__(self, smooth: float = 1e-6, threshold: float = 0.5):
+        self.smooth = smooth
+        self.threshold = threshold
+
+    def __call__(
+        self,
+        logits: torch.Tensor,
+        targets: torch.Tensor,
+    ) -> float:
+        """
+        Compute mean Dice score across samples in batch.
+
+        Args:
+            logits: Model output (B, 1, H, W) or probabilities
+            targets: Ground truth (B, 1, H, W)
+
+        Returns:
+            Mean Dice score across batch samples
+        """
+        if logits.shape[1] == 1:
+            preds = (torch.sigmoid(logits) > self.threshold).float()
+        else:
+            preds = (logits > self.threshold).float()
+
+        dims = tuple(range(1, preds.ndim))
+        intersection = (preds * targets).sum(dim=dims)
+        total = preds.sum(dim=dims) + targets.sum(dim=dims)
+        sample_dice = (2.0 * intersection + self.smooth) / (total + self.smooth)
+        return sample_dice.mean().item()
+
+
+MeanDiceMetric = MeanDiceScoreMetric
+
+
 def get_pred_mask(logits: torch.Tensor, threshold: float = 0.5) -> torch.Tensor:
     """Convert logits to binary predictions."""
     return (torch.sigmoid(logits) > threshold).float()
