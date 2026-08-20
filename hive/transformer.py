@@ -59,7 +59,7 @@ class FPN(nn.Module):
 
         # Top-down pathway: upsample and add features from coarser levels
         for i in range(len(laterals) - 1, 0, -1):
-            laterals[i - 1] += F.interpolate(
+            laterals[i - 1] = laterals[i - 1] + F.interpolate(
                 laterals[i],
                 size=laterals[i - 1].shape[-2:],
                 mode="nearest"
@@ -166,13 +166,11 @@ class SwinModel(nn.Module):
     def __init__(
         self,
         channels: int = 256,
-        out_size: int = 224,
         classes: int = 1,
-        pretrained: bool = False,
+        pretrained: bool = True,
     ) -> None:
         super().__init__()
 
-        self.out_size = out_size
         self.fpn = SwinFPN(out_channels=channels,
                 pretrained=pretrained)
 
@@ -207,6 +205,8 @@ class SwinModel(nn.Module):
 
     def forward(self, X: torch.Tensor) -> torch.Tensor:
         """Forward pass through Swin segmentation model."""
+
+        input_size = X.shape[2:]
 
         pre = self.fpn(X)
 
@@ -243,7 +243,7 @@ class SwinModel(nn.Module):
 
         return F.interpolate(
             out,
-            size=self.out_size,
+            size=input_size,
             mode="bilinear",
             align_corners=False
         )                              
